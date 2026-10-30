@@ -680,6 +680,32 @@ bool NativeWindow::nativeEvent(const QByteArray &eventType, void *message, qintp
         }
         setMaximizeState(false, false);
         break;
+    case WM_GETMINMAXINFO: {
+        // A frameless window keeps WS_THICKFRAME so its edges stay resizable,
+        // but that frame makes Windows size a maximized window to the whole
+        // monitor *plus* the resize border, spilling the title bar past every
+        // screen edge (the top bar and its buttons end up clipped). Constrain
+        // the maximized placement to the monitor's work area so nothing is
+        // clipped and a docked taskbar stays uncovered; keep the usual minimum.
+        const HMONITOR monitor = MonitorFromWindow(msg->hwnd, MONITOR_DEFAULTTONEAREST);
+        if (!monitor)
+            break;
+        MONITORINFO info {};
+        info.cbSize = sizeof(info);
+        if (!GetMonitorInfoW(monitor, &info))
+            break;
+        auto *const mmi = reinterpret_cast<MINMAXINFO *>(msg->lParam);
+        mmi->ptMaxPosition.x = info.rcWork.left - info.rcMonitor.left;
+        mmi->ptMaxPosition.y = info.rcWork.top - info.rcMonitor.top;
+        mmi->ptMaxSize.x = info.rcWork.right - info.rcWork.left;
+        mmi->ptMaxSize.y = info.rcWork.bottom - info.rcWork.top;
+        const QSize minimum = minimumSize();
+        const qreal scale = devicePixelRatio();
+        mmi->ptMinTrackSize.x = qRound(minimum.width() * scale);
+        mmi->ptMinTrackSize.y = qRound(minimum.height() * scale);
+        *result = 0;
+        return true;
+    }
     default:
         break;
     }
