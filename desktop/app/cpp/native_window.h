@@ -96,11 +96,17 @@ private:
     long hitTest(int screenX, int screenY) const;
     bool itemContains(const QQuickItem *item, const QPointF &scenePoint) const;
     void setMaximizeState(bool hovered, bool pressed);
+    // Recomputes the maximized top inset from the live window geometry and
+    // emits a change only when it moves. Called from resize/visibility events,
+    // never from the property getter, so reading the property stays free of
+    // side effects (and of binding loops).
+    void refreshMaximizedInset();
 
     bool m_backdrop = true;
     bool m_acrylic = false;
     bool m_darkFrame = false;
     qreal m_captionHeight = 48;
+    qreal m_maximizedInsetTop = 0;
     QPointer<QQuickItem> m_maximizeButton;
     bool m_maximizeHovered = false;
     bool m_maximizePressed = false;

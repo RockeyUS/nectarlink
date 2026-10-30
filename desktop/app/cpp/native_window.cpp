@@ -359,7 +359,7 @@ NativeWindow::NativeWindow(QWindow *parent)
     setPersistentGraphics(false);
     connect(this, &QWindow::visibilityChanged, this, [this](QWindow::Visibility) {
         emit windowVisibilityChanged();
-        emit maximizedInsetTopChanged();
+        refreshMaximizedInset();
     });
 #ifdef __linux__
     setProperty("_nl_linux_filter", true);
@@ -518,10 +518,10 @@ bool NativeWindow::event(QEvent *event)
 {
     if (QQmlEngine *engine = qmlEngine(this))
         register_qml_engine(engine);
-    // The maximized overhang changes with size and maximized state, so let the
-    // UI re-read its top inset whenever the window is resized.
+    // The maximized overhang changes with size and maximized state, so recompute
+    // the cached top inset whenever the window is resized.
     if (event->type() == QEvent::Resize)
-        emit maximizedInsetTopChanged();
+        refreshMaximizedInset();
     if (event->type() == QEvent::Close) {
         trimD3DResources(this);
         event->accept();
@@ -571,29 +571,40 @@ void NativeWindow::applyFrame()
 
 qreal NativeWindow::maximizedInsetTop() const
 {
+    // Pure accessor: returns the cached value so QML can read it during layout
+    // without triggering geometry queries (and the binding loops they cause).
+    return m_maximizedInsetTop;
+}
+
+void NativeWindow::refreshMaximizedInset()
+{
+    qreal inset = 0;
 #ifdef _WIN32
-    const HWND hwnd = hwndOf(this);
-    if (!hwnd || !IsZoomed(hwnd))
-        return 0;
-    // With ExpandedClientAreaHint the client area covers the whole window, so
-    // a maximized window's client origin sits above the monitor's work area by
-    // the resize-border thickness. Measure that overhang directly rather than
-    // assume a value, and report it in logical pixels.
-    POINT clientTopLeft { 0, 0 };
-    ClientToScreen(hwnd, &clientTopLeft);
-    const HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-    MONITORINFO info {};
-    info.cbSize = sizeof(info);
-    if (!GetMonitorInfoW(monitor, &info))
-        return 0;
-    const long overhang = info.rcWork.top - clientTopLeft.y;
-    if (overhang <= 0)
-        return 0;
-    const qreal dpr = devicePixelRatio();
-    return dpr > 0 ? overhang / dpr : qreal(overhang);
-#else
-    return 0;
+    // Only when the native window already exists, so this never creates it.
+    const HWND hwnd = handle() ? hwndOf(this) : nullptr;
+    if (hwnd && IsZoomed(hwnd)) {
+        // With ExpandedClientAreaHint the client area covers the whole window,
+        // so a maximized window's client origin sits above the monitor's work
+        // area by the resize-border thickness. Measure that overhang directly
+        // and report it in logical pixels.
+        POINT clientTopLeft { 0, 0 };
+        ClientToScreen(hwnd, &clientTopLeft);
+        const HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO info {};
+        info.cbSize = sizeof(info);
+        if (GetMonitorInfoW(monitor, &info)) {
+            const long overhang = info.rcWork.top - clientTopLeft.y;
+            if (overhang > 0) {
+                const qreal dpr = devicePixelRatio();
+                inset = dpr > 0 ? overhang / dpr : qreal(overhang);
+            }
+        }
+    }
 #endif
+    if (qAbs(inset - m_maximizedInsetTop) > 0.01) {
+        m_maximizedInsetTop = inset;
+        emit maximizedInsetTopChanged();
+    }
 }
 
 bool NativeWindow::itemContains(const QQuickItem *item, const QPointF &scenePoint) const
