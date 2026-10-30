@@ -1209,9 +1209,10 @@ NativeWindow {
     CaptionButtons {
         id: captionButtons
         window: window
-        anchors.top: parent.top
         // Keep the window buttons level with the title strip below the overhang.
-        anchors.topMargin: window.maximizedInsetTop
+        // A plain y (like the rail and main) avoids the anchor system's
+        // topMargin binding-loop check.
+        y: window.maximizedInsetTop
         anchors.right: parent.right
     }
 
