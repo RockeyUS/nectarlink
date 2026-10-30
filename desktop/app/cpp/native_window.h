@@ -32,6 +32,12 @@ class NativeWindow : public QQuickWindow
     Q_PROPERTY(QQuickItem *maximizeButton READ maximizeButton WRITE setMaximizeButton NOTIFY maximizeButtonChanged)
     Q_PROPERTY(bool maximizeHovered READ maximizeHovered NOTIFY maximizeStateChanged)
     Q_PROPERTY(bool maximizePressed READ maximizePressed NOTIFY maximizeStateChanged)
+    // How far the expanded client area overhangs the screen's top when
+    // maximized, in logical pixels (0 otherwise). A maximized window's client
+    // area starts above the work area by the resize-border thickness, so the
+    // title strip drawn at y=0 would be clipped; the UI shifts down by this
+    // much to stay fully on screen. Changes with size and maximized state.
+    Q_PROPERTY(qreal maximizedInsetTop READ maximizedInsetTop NOTIFY maximizedInsetTopChanged)
 
 public:
     explicit NativeWindow(QWindow *parent = nullptr);
@@ -48,6 +54,7 @@ public:
     void setMaximizeButton(QQuickItem *item);
     bool maximizeHovered() const { return m_maximizeHovered; }
     bool maximizePressed() const { return m_maximizePressed; }
+    qreal maximizedInsetTop() const;
 
     // Interactive items inside the title strip (buttons, search fields):
     // clicks there go to the item instead of dragging the window.
@@ -76,6 +83,7 @@ signals:
     void captionHeightChanged();
     void maximizeButtonChanged();
     void maximizeStateChanged();
+    void maximizedInsetTopChanged();
     void windowVisibilityChanged();
     void closeRequested();
 

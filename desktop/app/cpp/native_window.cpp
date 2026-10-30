@@ -359,6 +359,7 @@ NativeWindow::NativeWindow(QWindow *parent)
     setPersistentGraphics(false);
     connect(this, &QWindow::visibilityChanged, this, [this](QWindow::Visibility) {
         emit windowVisibilityChanged();
+        emit maximizedInsetTopChanged();
     });
 #ifdef __linux__
     setProperty("_nl_linux_filter", true);
@@ -517,6 +518,10 @@ bool NativeWindow::event(QEvent *event)
 {
     if (QQmlEngine *engine = qmlEngine(this))
         register_qml_engine(engine);
+    // The maximized overhang changes with size and maximized state, so let the
+    // UI re-read its top inset whenever the window is resized.
+    if (event->type() == QEvent::Resize)
+        emit maximizedInsetTopChanged();
     if (event->type() == QEvent::Close) {
         trimD3DResources(this);
         event->accept();
@@ -561,6 +566,33 @@ void NativeWindow::applyFrame()
     }
 #else
     setColor(m_darkFrame ? QColor(0x14, 0x13, 0x11) : QColor(0xF8, 0xF6, 0xF2));
+#endif
+}
+
+qreal NativeWindow::maximizedInsetTop() const
+{
+#ifdef _WIN32
+    const HWND hwnd = hwndOf(this);
+    if (!hwnd || !IsZoomed(hwnd))
+        return 0;
+    // With ExpandedClientAreaHint the client area covers the whole window, so
+    // a maximized window's client origin sits above the monitor's work area by
+    // the resize-border thickness. Measure that overhang directly rather than
+    // assume a value, and report it in logical pixels.
+    POINT clientTopLeft { 0, 0 };
+    ClientToScreen(hwnd, &clientTopLeft);
+    const HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO info {};
+    info.cbSize = sizeof(info);
+    if (!GetMonitorInfoW(monitor, &info))
+        return 0;
+    const long overhang = info.rcWork.top - clientTopLeft.y;
+    if (overhang <= 0)
+        return 0;
+    const qreal dpr = devicePixelRatio();
+    return dpr > 0 ? overhang / dpr : qreal(overhang);
+#else
+    return 0;
 #endif
 }
 
@@ -680,32 +712,6 @@ bool NativeWindow::nativeEvent(const QByteArray &eventType, void *message, qintp
         }
         setMaximizeState(false, false);
         break;
-    case WM_GETMINMAXINFO: {
-        // A frameless window keeps WS_THICKFRAME so its edges stay resizable,
-        // but that frame makes Windows size a maximized window to the whole
-        // monitor *plus* the resize border, spilling the title bar past every
-        // screen edge (the top bar and its buttons end up clipped). Constrain
-        // the maximized placement to the monitor's work area so nothing is
-        // clipped and a docked taskbar stays uncovered; keep the usual minimum.
-        const HMONITOR monitor = MonitorFromWindow(msg->hwnd, MONITOR_DEFAULTTONEAREST);
-        if (!monitor)
-            break;
-        MONITORINFO info {};
-        info.cbSize = sizeof(info);
-        if (!GetMonitorInfoW(monitor, &info))
-            break;
-        auto *const mmi = reinterpret_cast<MINMAXINFO *>(msg->lParam);
-        mmi->ptMaxPosition.x = info.rcWork.left - info.rcMonitor.left;
-        mmi->ptMaxPosition.y = info.rcWork.top - info.rcMonitor.top;
-        mmi->ptMaxSize.x = info.rcWork.right - info.rcWork.left;
-        mmi->ptMaxSize.y = info.rcWork.bottom - info.rcWork.top;
-        const QSize minimum = minimumSize();
-        const qreal scale = devicePixelRatio();
-        mmi->ptMinTrackSize.x = qRound(minimum.width() * scale);
-        mmi->ptMinTrackSize.y = qRound(minimum.height() * scale);
-        *result = 0;
-        return true;
-    }
     default:
         break;
     }

@@ -557,7 +557,10 @@ NativeWindow {
         id: rail
         visible: !window.welcome
         width: Theme.railWidth
-        height: parent.height
+        // When maximized, the window's client area overhangs the screen top;
+        // shift the chrome down by that overhang so nothing is clipped.
+        y: window.maximizedInsetTop
+        height: parent.height - window.maximizedInsetTop
         color: "transparent"
         property string hoveredNav: ""
 
@@ -687,7 +690,9 @@ NativeWindow {
         visible: !window.welcome
         anchors.left: rail.right
         anchors.right: parent.right
-        height: parent.height
+        // Matches the rail: drop below the maximized window's top overhang.
+        y: window.maximizedInsetTop
+        height: parent.height - window.maximizedInsetTop
 
         Item {
             id: topBar
@@ -1205,6 +1210,8 @@ NativeWindow {
         id: captionButtons
         window: window
         anchors.top: parent.top
+        // Keep the window buttons level with the title strip below the overhang.
+        anchors.topMargin: window.maximizedInsetTop
         anchors.right: parent.right
     }
 
